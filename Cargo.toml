@@ -1,0 +1,15 @@
+[package]
+name = "hawkeye-collector"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hawkeye = { git = "https://github.com/musergi/hawkeyed.git" }
+tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread"] }
+log = "0.4.17"
+simple_logger = "4.0.0"
+tonic = "0.8"
+prost = "0.11"
+
+[build-dependencies]
+tonic-build = "0.8"

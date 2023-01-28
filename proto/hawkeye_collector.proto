@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package hawkeye_collector;
+
+service HawkeyeCollector {
+    rpc GetOcupation(OcupationRequest) returns (OcupationReponse) {}
+}
+
+message OcupationRequest {
+    string identifier = 1;
+}
+
+message OcupationReponse {
+    repeated OcupationSample samples = 1;
+}
+
+message OcupationSample {
+    uint64 timestamp = 1;
+    float value = 2;
+}
