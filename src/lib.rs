@@ -5,6 +5,7 @@ pub struct Sample {
     pub value: f32,
 }
 
+pub mod polling;
 pub mod storage;
 
 pub mod generated {

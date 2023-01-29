@@ -1,17 +1,19 @@
+use super::{SampleStorage, StorageError};
+use crate::Sample;
+use log::info;
 use std::collections::VecDeque;
 
-use log::info;
-
-use crate::Sample;
-
-use super::SampleStorage;
-
+/// Storage implementation that holds the passed samples in memory
 pub struct MemoryStorage {
     max_size: usize,
     content: VecDeque<Sample>,
 }
 
 impl MemoryStorage {
+    /// Constructor for the memory storage
+    ///
+    /// * `size` - Number of messages to hold in memory, any message beyond this count
+    ///            will replace the oldest message in memory
     pub fn new(size: usize) -> MemoryStorage {
         MemoryStorage {
             max_size: size,
@@ -21,7 +23,7 @@ impl MemoryStorage {
 }
 
 impl SampleStorage for MemoryStorage {
-    fn store(&mut self, sample: Sample) -> Result<(), super::StorageError> {
+    fn store(&mut self, sample: Sample) -> Result<(), StorageError> {
         while self.content.len() >= self.max_size {
             self.content.pop_front();
         }
@@ -30,7 +32,7 @@ impl SampleStorage for MemoryStorage {
         Ok(())
     }
 
-    fn fetch(&self, identifier: &str) -> Result<Vec<Sample>, super::StorageError> {
+    fn fetch(&self, identifier: &str) -> Result<Vec<Sample>, StorageError> {
         Ok(self
             .content
             .iter()

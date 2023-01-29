@@ -1,32 +1,25 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use hawkeye::generated::{hawkeye_service_client::HawkeyeServiceClient, CpuStatsRequest};
+use hawkeye::generated::hawkeye_service_client::HawkeyeServiceClient;
 use hawkeye_collector::generated::hawkeye_collector_server::HawkeyeCollectorServer;
 use hawkeye_collector::generated::{OcupationReponse, OcupationRequest, OcupationSample};
-use hawkeye_collector::storage::SampleStorage;
-use hawkeye_collector::Sample;
+use hawkeye_collector::polling::PollingService;
+use hawkeye_collector::storage::{FetchMessage, StorageService, StorageServiceMessage};
 use hawkeye_collector::{
     generated::hawkeye_collector_server::HawkeyeCollector, storage::memory::MemoryStorage,
 };
-use log::{info, error};
+use log::info;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{self, interval};
+use tokio::time::interval;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[derive(Debug)]
-enum DatabaseMessage {
-    Occupation(f32),
-    Fetch(String, oneshot::Sender<Vec<Sample>>),
-}
-
 #[derive(Debug, Clone)]
 struct HawkeyeCollectorImpl {
-    db_requester: tokio::sync::mpsc::Sender<DatabaseMessage>,
+    db_requester: tokio::sync::mpsc::Sender<StorageServiceMessage>,
 }
 
 impl HawkeyeCollectorImpl {
-    fn new(sender: mpsc::Sender<DatabaseMessage>) -> HawkeyeCollectorImpl {
+    fn new(sender: mpsc::Sender<StorageServiceMessage>) -> HawkeyeCollectorImpl {
         HawkeyeCollectorImpl {
             db_requester: sender,
         }
@@ -41,11 +34,9 @@ impl HawkeyeCollector for HawkeyeCollectorImpl {
     ) -> Result<tonic::Response<OcupationReponse>, Status> {
         info!("Received GRPC get ocupation request");
         let (tx, rx) = oneshot::channel();
+        let request = FetchMessage::new(request.get_ref().identifier.clone(), tx);
         self.db_requester
-            .send(DatabaseMessage::Fetch(
-                request.get_ref().identifier.clone(),
-                tx,
-            ))
+            .send(StorageServiceMessage::Fetch(request))
             .await
             .unwrap();
         info!("Sent request to database");
@@ -66,58 +57,22 @@ impl HawkeyeCollector for HawkeyeCollectorImpl {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     simple_logger::init_with_level(log::Level::Info).unwrap();
-    let mut storage = MemoryStorage::new(10);
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let probe_tx = tx.clone();
-    tokio::spawn(async move {
-        let mut interval = interval(Duration::from_secs(10));
-        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            let peer = "http://shallan:50000";
-            let mut client = HawkeyeServiceClient::connect(peer).await.unwrap();
-            let response = client
-                .get_cpu_stats(CpuStatsRequest { time: 1 })
-                .await
-                .unwrap();
-            log::info!("Ocupation: {}", response.get_ref().ocupation);
-            probe_tx
-                .send(DatabaseMessage::Occupation(response.get_ref().ocupation))
-                .await
-                .unwrap();
-        }
-    });
-    tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            log::info!("Got: {message:?}");
-            match message {
-                DatabaseMessage::Occupation(value) => {
-                    let timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    info!("Timestamp: {:?}", timestamp);
-                    storage
-                        .store(Sample {
-                            identifier: "shallan".to_string(),
-                            timestamp,
-                            value,
-                        })
-                        .unwrap();
-                }
-                DatabaseMessage::Fetch(identifier, sender) => {
-                    if let Err(err) = sender.send(storage.fetch(&identifier).unwrap()) {
-                        error!("Error sending fetched data {:?}", err)
-                    }
-                }
-            };
-        }
-        error!("Done receiving due to error");
-    });
+    let (tx, rx) = mpsc::channel(100);
+    let storage = MemoryStorage::new(10);
+    let storage_service = StorageService::new(rx, storage);
+    tokio::spawn(storage_service.run());
+
+    let peer = "http://shallan:50000";
+    let client = HawkeyeServiceClient::connect(peer).await.unwrap();
+    let polling_service =
+        PollingService::new(interval(Duration::from_secs(10)), tx.clone(), client);
+    tokio::spawn(polling_service.run());
+
     Server::builder()
         .add_service(HawkeyeCollectorServer::new(HawkeyeCollectorImpl::new(tx)))
         .serve("127.0.0.1:50001".parse()?)
         .await?;
+
     Ok(())
 }
