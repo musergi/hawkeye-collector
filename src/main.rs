@@ -14,11 +14,10 @@ use tonic::transport::Server;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     simple_logger::init_with_level(log::Level::Info).unwrap();
-    let args = env::args()
-        .next()
-        .expect("Expected one argument with config path");
+    let args = env::args().collect::<Vec<_>>();
+    let config_path = args.get(1).expect("Expected one argument with config path");
     let config: Config =
-        serde_json::from_str(&fs::read_to_string(args).expect("Config file not found"))
+        serde_json::from_str(&fs::read_to_string(config_path).expect("Config file not found"))
             .expect("Invalid config");
 
     let (tx, rx) = mpsc::channel(config.message_channel_size);
