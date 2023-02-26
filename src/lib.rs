@@ -7,6 +7,7 @@ pub struct Sample {
 
 pub mod config;
 pub mod polling;
+pub mod rest;
 pub mod service;
 pub mod storage;
 

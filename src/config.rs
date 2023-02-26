@@ -8,7 +8,9 @@ use std::net::SocketAddr;
 #[derive(Deserialize)]
 pub struct Config {
     #[serde(deserialize_with = "deserialize_address")]
-    pub address: SocketAddr,
+    pub grpc_address: SocketAddr,
+    #[serde(deserialize_with = "deserialize_address")]
+    pub rest_address: SocketAddr,
     pub memory_storage_size: usize,
     pub message_channel_size: usize,
     pub peers: Vec<PeerConfig>,

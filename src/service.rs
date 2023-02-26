@@ -3,7 +3,7 @@ use crate::{
         hawkeye_collector_server::HawkeyeCollector, OcupationReponse, OcupationRequest,
         OcupationSample,
     },
-    storage::{FetchMessage, StorageServiceMessage},
+    storage::StorageServiceMessage,
 };
 use log::info;
 use tokio::sync::{mpsc, oneshot};
@@ -30,9 +30,11 @@ impl HawkeyeCollector for HawkeyeCollectorImpl {
     ) -> Result<tonic::Response<OcupationReponse>, Status> {
         info!("Received GRPC get ocupation request");
         let (tx, rx) = oneshot::channel();
-        let request = FetchMessage::new(request.get_ref().identifier.clone(), tx);
         self.db_requester
-            .send(StorageServiceMessage::Fetch(request))
+            .send(StorageServiceMessage::Fetch {
+                identifier: request.get_ref().identifier.clone(),
+                response_channel: tx,
+            })
             .await
             .unwrap();
         info!("Sent request to database");

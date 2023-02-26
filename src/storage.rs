@@ -1,15 +1,16 @@
 use crate::Sample;
-use log::error;
+use log::{debug, error};
 use std::{error::Error, fmt};
-use tokio::sync::{mpsc, oneshot};
+
+type RequestChannel = tokio::sync::mpsc::Receiver<StorageServiceMessage>;
 
 pub struct StorageService<S> {
-    receiver: mpsc::Receiver<StorageServiceMessage>,
+    receiver: RequestChannel,
     storage: S,
 }
 
 impl<S> StorageService<S> {
-    pub fn new(receiver: mpsc::Receiver<StorageServiceMessage>, storage: S) -> StorageService<S> {
+    pub fn new(receiver: RequestChannel, storage: S) -> StorageService<S> {
         StorageService { receiver, storage }
     }
 
@@ -27,12 +28,15 @@ impl<S> StorageService<S> {
     where
         S: SampleStorage,
     {
+        debug!("Storage request: {}", message);
         match message {
             StorageServiceMessage::Store(sample) => self.storage.store(sample).unwrap(),
-            StorageServiceMessage::Fetch(message) => {
-                let FetchMessage { identifier, sender } = message;
+            StorageServiceMessage::Fetch {
+                identifier,
+                response_channel,
+            } => {
                 let response = self.storage.fetch(&identifier).unwrap();
-                sender.send(response).unwrap();
+                response_channel.send(response).unwrap();
             }
         }
     }
@@ -41,18 +45,22 @@ impl<S> StorageService<S> {
 #[derive(Debug)]
 pub enum StorageServiceMessage {
     Store(Sample),
-    Fetch(FetchMessage),
+    Fetch {
+        identifier: String,
+        response_channel: tokio::sync::oneshot::Sender<Vec<Sample>>,
+    },
 }
 
-#[derive(Debug)]
-pub struct FetchMessage {
-    identifier: String,
-    sender: oneshot::Sender<Vec<Sample>>,
-}
-
-impl FetchMessage {
-    pub fn new(identifier: String, sender: oneshot::Sender<Vec<Sample>>) -> FetchMessage {
-        FetchMessage { identifier, sender }
+impl fmt::Display for StorageServiceMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StorageServiceMessage::Store(sample) => {
+                write!(f, "Store({}, {})", sample.timestamp, sample.identifier)
+            }
+            StorageServiceMessage::Fetch { identifier, .. } => {
+                write!(f, "Fetch({})", identifier)
+            }
+        }
     }
 }
 

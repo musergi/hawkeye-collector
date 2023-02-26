@@ -13,7 +13,7 @@ use tonic::transport::Server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    simple_logger::init_with_level(log::Level::Info).unwrap();
+    simple_logger::init_with_level(log::Level::Debug).unwrap();
     let args = env::args().collect::<Vec<_>>();
     let config_path = args.get(1).expect("Expected one argument with config path");
     let config: Config =
@@ -37,9 +37,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(polling_service.run());
     }
 
+    let api_tx = tx.clone();
+    tokio::spawn(async move {
+        warp::serve(hawkeye_collector::rest::routes(api_tx))
+            .run(config.rest_address)
+            .await
+    });
+
     Server::builder()
         .add_service(HawkeyeCollectorServer::new(HawkeyeCollectorImpl::new(tx)))
-        .serve(config.address)
+        .serve(config.grpc_address)
         .await?;
 
     Ok(())
